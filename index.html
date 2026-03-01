@@ -100,6 +100,11 @@
         .inbox-modal-content { flex-direction: column !important; }
         .inbox-list-area { width: 100% !important; height: 150px; border-right: none !important; border-bottom: 2px solid var(--win-shadow); }
     }
+
+    /* Sound controls */
+    .sound-controls { display: flex; align-items: center; gap: 8px; padding: 4px; margin-left: auto; }
+    .sound-toggle { background: #dfdfdf; border: 1px solid #444; padding: 4px 8px; cursor: pointer; font-size: 12px; border-radius: 2px; }
+    .sound-toggle.active { background: #008000; color: white; }
 </style>
 </head>
 <body>
@@ -133,7 +138,17 @@
                 <button class="ctrl-btn" id="btn_p_2x" onclick="set_speed(1250)">>> 2X</button>
             </div>
         </div>
+        
+        <div class="sound-controls">
+            <span style="font-size: 12px; font-weight: bold;">🔊 AUDIO:</span>
+            <button id="btn_bgm" class="sound-toggle active" onclick="toggle_bgm()">BGM ON</button>
+            <button id="btn_sfx" class="sound-toggle active" onclick="toggle_sfx()">SFX ON</button>
+        </div>
     </div>
+
+    <audio id="bgm" loop><source src="assets/bgm.mp3" type="audio/mpeg"></audio>
+    <audio id="tick"><source src="assets/tick.mp3" type="audio/mpeg"></audio>
+    <audio id="alarm"><source src="assets/alarm.mp3" type="audio/mpeg"></audio>
 
     <div class="ticker-wrap"><div class="ticker" id="news_ticker">MARKET STABLE... AWAITING MONTHLY EARNINGS REPORT... INITIALIZING CANDER TERMINAL...</div></div>
     
@@ -338,6 +353,12 @@ let sim_timer = null;
 let current_speed = 0; 
 let current_memo = null;
 
+// Sound system state
+let sound_enabled = { bgm: true, sfx: true };
+let bgm_audio = null;
+let tick_audio = null;
+let alarm_audio = null;
+
 const competitors = [
     { name: "CanvasOS", desc: "Venture-backed startup" },
     { name: "Aperture Libre", desc: "Open-source collective" },
@@ -526,7 +547,59 @@ function isChecked(id) {
     return el ? el.checked : false;
 }
 
+// Sound system functions
+function playSound(id) {
+    if (!sound_enabled.sfx || !document.getElementById(id)) return;
+    
+    try {
+        const audio = document.getElementById(id);
+        if (audio && audio.paused) {
+            audio.currentTime = 0;
+            audio.play().catch(e => console.log('Audio blocked by browser policy:', e));
+        }
+    } catch(e) {
+        // Graceful degradation - sound failures don't affect gameplay
+    }
+}
+
+function toggle_bgm() {
+    if (!bgm_audio && !document.getElementById('bgm')) return;
+    
+    bgm_audio = document.getElementById('bgm');
+    if (sound_enabled.bgm) {
+        try { bgm_audio.pause(); } catch(e) {}
+        sound_enabled.bgm = false;
+        const btn = document.getElementById('btn_bgm');
+        if (btn) { btn.className = 'sound-toggle'; btn.innerText = 'BGM OFF'; }
+    } else {
+        try { 
+            bgm_audio.currentTime = 0;
+            bgm_audio.play().catch(e => console.log('Audio blocked:', e));
+        } catch(e) {}
+        sound_enabled.bgm = true;
+        const btn = document.getElementById('btn_bgm');
+        if (btn) { btn.className = 'sound-toggle active'; btn.innerText = 'BGM ON'; }
+    }
+}
+
+function toggle_sfx() {
+    if (sound_enabled.sfx) {
+        sound_enabled.sfx = false;
+        const btn = document.getElementById('btn_sfx');
+        if (btn) { btn.className = 'sound-toggle'; btn.innerText = 'SFX OFF'; }
+    } else {
+        sound_enabled.sfx = true;
+        const btn = document.getElementById('btn_sfx');
+        if (btn) { btn.className = 'sound-toggle active'; btn.innerText = 'SFX ON'; }
+    }
+}
+
 function init() {
+    // Initialize audio elements
+    bgm_audio = document.getElementById('bgm');
+    tick_audio = document.getElementById('tick');
+    alarm_audio = document.getElementById('alarm');
+
     const c = document.getElementById('perf_canvas');
     resizeCanvas(c);
     window.addEventListener('resize', function() { resizeCanvas(document.getElementById('perf_canvas')); });
@@ -538,6 +611,7 @@ function init() {
             text: "Initialize Terminal", 
             action: function() { 
                 set_speed(2500); 
+                playSound('tick'); // Play tick sound on start
                 return "DECISION: Terminal Initialized. Engine Engaged."; 
             } 
         }], 
@@ -883,6 +957,9 @@ function generate_news() {
 function next_tick() { 
     if(state.over || state.modal_active) return;
     
+    // Play tick sound at each time step
+    playSound('tick');
+    
     let slider = document.getElementById('price_slider');
     let price = 10; 
     if (slider) {
@@ -1140,6 +1217,11 @@ function next_tick() {
     generate_news();
     update_ui();
     
+    // Play alarm sound for critical events
+    if(state.board_patience < 40 || state.pol < 25 || current_total_users < 501) {
+        playSound('alarm');
+    }
+    
     if(state.comp_locked && total_users_lost > 0) {
         log("Month " + state.month + ": DEFECTION - " + total_users_lost + " users migrated.");
     } else {
@@ -1335,6 +1417,9 @@ function log(m) {
 function end(t, m, debrief) { 
     state.over = true; 
     set_speed(0); 
+    
+    // Play alarm sound on game over
+    playSound('alarm');
     
     let checks = document.querySelectorAll('input[type="checkbox"]');
     for(let i=0; i<checks.length; i++) { 
